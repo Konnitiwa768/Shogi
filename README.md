@@ -1,0 +1,2 @@
+# Shogi
+https://chatgpt.com
