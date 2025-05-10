@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>3x4 動物将棋</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; }
+    table { border-collapse: collapse; margin: 10px auto; }
+    td {
+      width: 60px; height: 60px;
+      border: 1px solid #444;
+      font-size: 20px; cursor: pointer;
+      vertical-align: middle;
+    }
+    .selected { background-color: #ffc; }
+    .handArea { display: flex; justify-content: center; margin: 10px; }
+    .handPiece { margin: 0 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>3x4 動物将棋</h2>
+
+  <div class="handArea" id="playerHand">持ち駒（あなた）：</div>
+  <table id="board"></table>
+  <div class="handArea" id="aiHand">持ち駒（AI）：</div>
+
+  <p><button onclick="startGame()">リスタート</button></p>
+  <p id="status"></p>
+
+  <script src="ai.js"></script>
+  <script>
+    const BOARD_W = 3, BOARD_H = 4;
+    const PROMOTE_ROW = 0; // 敵陣 = 最上段
+    const PIECES = {
+      L: 'ライオン', E: 'ぞう', G: 'きりん', C: 'ひよこ', H: 'ニワトリ'
+    };
+
+    let board = [], selected = null, selectedHand = null;
+    let turn = 'P'; // P=プレイヤー A=AI
+    let hands = { P: [], A: [] };
+    let gameOver = false;
+
+    function startGame() {
+      board = [
+        [null, 'AL', null],
+        ['AE', 'AC', 'AG'],
+        [null, 'PC', null],
+        ['PG', 'PL', 'PE']
+      ];
+      hands = { P: [], A: [] };
+      selected = null;
+      selectedHand = null;
+      turn = 'P';
+      gameOver = false;
+      render();
+    }
+
+    function render() {
+      const tbl = document.getElementById("board");
+      tbl.innerHTML = '';
+      for (let y = 0; y < BOARD_H; y++) {
+        const row = document.createElement("tr");
+        for (let x = 0; x < BOARD_W; x++) {
+          const td = document.createElement("td");
+          const piece = board[y][x];
+          td.dataset.x = x;
+          td.dataset.y = y;
+          td.onclick = () => handleClick(x, y);
+          if (selected && selected[0] === x && selected[1] === y)
+            td.classList.add("selected");
+          if (piece) {
+            const side = piece[0] === 'P' ? '先' : '後';
+            td.textContent = side + ':' + PIECES[piece.slice(1)];
+          }
+          row.appendChild(td);
+        }
+        tbl.appendChild(row);
+      }
+      drawHand('P');
+      drawHand('A');
+      document.getElementById("status").textContent =
+        gameOver ? (turn === 'P' ? 'あなたの負け...' : 'あなたの勝ち！') : '';
+      if (!gameOver && turn === 'A') {
+        setTimeout(() => {
+          aiMove(board, hands);
+          turn = 'P';
+          render();
+        }, 600);
+      }
+    }
+
+    function drawHand(player) {
+      const handDiv = document.getElementById(player === 'P' ? "playerHand" : "aiHand");
+      handDiv.innerHTML = (player === 'P' ? '持ち駒（あなた）' : '持ち駒（AI）') + '：';
+      hands[player].forEach((p, i) => {
+        const span = document.createElement("span");
+        span.textContent = PIECES[p];
+        span.className = 'handPiece';
+        if (player === 'P') {
+          span.onclick = () => {
+            selected = null;
+            selectedHand = i;
+            render();
+          };
+          if (selectedHand === i) span.classList.add("selected");
+        }
+        handDiv.appendChild(span);
+      });
+    }
+
+    function handleClick(x, y) {
+      if (gameOver || turn !== 'P') return;
+      if (selectedHand !== null) {
+        if (!board[y][x]) {
+          const piece = hands.P[selectedHand];
+          board[y][x] = 'P' + piece;
+          hands.P.splice(selectedHand, 1);
+          selectedHand = null;
+          checkWin();
+          turn = 'A';
+          render();
+        }
+        return;
+      }
+
+      const target = board[y][x];
+      if (selected) {
+        const [sx, sy] = selected;
+        if ((sx !== x || sy !== y) && canMove(sx, sy, x, y, 'P')) {
+          const fromPiece = board[sy][sx];
+          const dest = board[y][x];
+          if (dest && dest[0] === 'A') {
+            let captured = dest.slice(1);
+            if (captured === 'H') captured = 'C'; // ニワトリ→ひよこに戻す
+            hands.P.push(captured);
+          }
+          board[y][x] = fromPiece;
+          board[sy][sx] = null;
+
+          // 成り判定
+          if (fromPiece === 'PC' && y === PROMOTE_ROW) {
+            board[y][x] = 'PH';
+          }
+
+          selected = null;
+          selectedHand = null;
+          checkWin();
+          turn = 'A';
+          render();
+        } else {
+          selected = null;
+          render();
+        }
+      } else if (target && target[0] === 'P') {
+        selected = [x, y];
+        selectedHand = null;
+        render();
+      }
+    }
+
+    function canMove(sx, sy, dx, dy, side) {
+      const piece = board[sy][sx];
+      if (!piece || piece[0] !== side) return false;
+      const type = piece.slice(1);
+      const dxAbs = dx - sx, dyAbs = dy - sy;
+      const dir = side === 'P' ? -1 : 1;
+      const dest = board[dy][dx];
+      if (dest && dest[0] === side) return false;
+      switch (type) {
+        case 'L': return Math.abs(dxAbs) <= 1 && Math.abs(dyAbs) <= 1;
+        case 'E': return Math.abs(dxAbs) === 1 && Math.abs(dyAbs) === 1;
+        case 'G': return (dxAbs === 0 && Math.abs(dyAbs) === 1) || (dyAbs === 0 && Math.abs(dxAbs) === 1);
+        case 'C': return dxAbs === 0 && dyAbs === dir;
+        case 'H': return Math.abs(dxAbs) <= 1 && (dyAbs === dir || dyAbs === 0);
+        default: return false;
+      }
+    }
+
+    function checkWin() {
+      let lionP = false, lionA = false;
+      for (let row of board) {
+        for (let c of row) {
+          if (c === 'PL') lionP = true;
+          if (c === 'AL') lionA = true;
+        }
+      }
+      if (!lionA || (board[0].includes('PL'))) {
+        gameOver = true;
+        return;
+      }
+      if (!lionP || (board[3].includes('AL'))) {
+        gameOver = true;
+        return;
+      }
+    }
+
+    startGame();
+  </script>
+</body>
+</html>
